@@ -1,0 +1,263 @@
+<script type="text/babel">
+const { useState, useEffect, useCallback, useMemo, useRef } = React;
+
+// --- SHARED CONSTANTS ---
+const RoomStatus = { DIRTY: 'Dirty', CLEAN: 'Clean', IN_PROGRESS: 'In Progress' };
+const GuestStatus = { STAYOVER: 'Stay Overs', CHECKOUT: 'Checked Out', ARRIVAL: 'Arrivals', VACANT: 'Vacant' };
+
+// --- NAVBAR COMPONENT ---
+const Navbar = ({ view, setView, onRefresh, loading }) => (
+  <nav className="bg-slate-900 text-white px-6 py-3 flex items-center justify-between shadow-lg">
+    <div className="flex items-center space-x-4">
+      <div className="bg-amber-500 text-slate-900 p-2 rounded-lg font-black text-xl italic tracking-tighter">TG</div>
+      <div>
+        <h1 className="font-bold text-lg leading-tight uppercase tracking-widest">Tombstone Grand</h1>
+        <p className="text-[10px] uppercase text-slate-400 font-bold">HK Master v5.3</p>
+      </div>
+    </div>
+    <div className="flex bg-slate-800 rounded-full p-1 border border-slate-700">
+      <button onClick={() => setView('FRONT_DESK')} className={`px-6 py-1.5 rounded-full transition-all text-sm font-bold uppercase ${view === 'FRONT_DESK' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>Front Desk</button>
+      <button onClick={() => setView('HOUSEKEEPING')} className={`px-6 py-1.5 rounded-full transition-all text-sm font-bold uppercase ${view === 'HOUSEKEEPING' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'}`}>Housekeeping</button>
+    </div>
+    <div className="flex items-center space-x-3">
+      <button onClick={onRefresh} disabled={loading} className="p-2.5 rounded-full bg-slate-800 hover:bg-slate-700 border border-slate-700 disabled:opacity-50">
+        <i className={`fa-solid fa-rotate ${loading ? 'animate-spin' : ''}`}></i>
+      </button>
+    </div>
+  </nav>
+);
+
+// --- FRONT DESK VIEW ---
+const FrontDeskView = ({ rooms, onBulkAssign, onUpdateRoom }) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedRooms, setSelectedRooms] = useState(new Set());
+  const [filterHk, setFilterHk] = useState('ALL');
+  const [bulkHk, setBulkHk] = useState('');
+
+  const filtered = useMemo(() => rooms.filter(r => 
+    (r.room || "").toLowerCase().includes(searchTerm.toLowerCase()) && 
+    (filterHk === 'ALL' || r.assignedHk === filterHk)
+  ), [rooms, searchTerm, filterHk]);
+
+  const toggleSelect = (no) => {
+    const s = new Set(selectedRooms);
+    if (s.has(no)) s.delete(no); else s.add(no);
+    setSelectedRooms(s);
+  };
+
+  const handleStatusToggle = (e, room) => {
+    e.stopPropagation();
+    const nextStatus = room.housekeepingStatus === RoomStatus.CLEAN ? RoomStatus.DIRTY : RoomStatus.CLEAN;
+    onUpdateRoom(room.room, { ...room, housekeepingStatus: nextStatus, done: nextStatus === RoomStatus.CLEAN });
+  };
+
+  const handleEditNote = (e, room) => {
+    e.stopPropagation();
+    const newNote = prompt("Edit Room Notes:", room.notes || "");
+    if (newNote !== null) {
+      onUpdateRoom(room.room, { ...room, notes: newNote });
+    }
+  };
+
+  return (
+    <div className="h-full flex flex-col p-6 space-y-6 overflow-hidden">
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200 flex flex-wrap items-center gap-4">
+        <div className="relative flex-1 min-w-[200px]">
+          <i className="fa-solid fa-search absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+          <input type="text" placeholder="Search room..." className="w-full bg-slate-50 border pl-10 pr-4 py-2 rounded-lg text-sm" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} />
+        </div>
+        <select className="bg-slate-50 border p-2 rounded-lg text-sm font-bold outline-none" value={filterHk} onChange={e => setFilterHk(e.target.value)}>
+          <option value="ALL">All Boards</option>
+          <option value="UNASSIGNED">Unassigned</option>
+          {[1,2,3,4,5].map(n => <option key={n} value={n.toString()}>Board {n}</option>)}
+        </select>
+        {selectedRooms.size > 0 && (
+          <div className="flex items-center gap-3 ml-auto bg-blue-50 p-2 rounded-xl border border-blue-100 animate-in fade-in slide-in-from-right-4">
+            <span className="text-xs font-black text-blue-600 px-2">{selectedRooms.size} Selected</span>
+            <select className="bg-slate-900 text-white rounded-lg px-3 py-1.5 text-xs font-bold" value={bulkHk} onChange={e => setBulkHk(e.target.value)}>
+              <option value="">Assign To...</option>
+              {[1,2,3,4,5].map(n => <option key={n} value={n.toString()}>HK Board {n}</option>)}
+            </select>
+            <button className="bg-blue-600 text-white px-4 py-1.5 rounded-lg text-xs font-black uppercase transition-all active:scale-95" onClick={() => { onBulkAssign(Array.from(selectedRooms), bulkHk); setSelectedRooms(new Set()); setBulkHk(''); }}>Apply</button>
+          </div>
+        )}
+      </div>
+      <div className="flex-1 overflow-y-auto grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 pb-10 custom-scrollbar">
+        {filtered.map(r => (
+          <div key={r.room} onClick={() => toggleSelect(r.room)} className={`relative p-5 bg-white border-2 rounded-3xl cursor-pointer transition-all duration-300 ${selectedRooms.has(r.room) ? 'border-blue-600 ring-4 ring-blue-50' : 'border-slate-100 hover:border-slate-300 shadow-sm'}`}>
+            <div className="flex justify-between items-start">
+              <div className="text-3xl font-black tracking-tighter">#{r.room}</div>
+              <button onClick={(e) => handleStatusToggle(e, r)} className={`text-[10px] font-black uppercase px-2 py-1 rounded-lg transition-colors ${r.housekeepingStatus === RoomStatus.CLEAN ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                {r.housekeepingStatus}
+              </button>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-1">
+              <span className="text-[9px] font-bold text-slate-400 border border-slate-100 px-1.5 py-0.5 rounded">{r.roomType}</span>
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${r.guestStatus === GuestStatus.CHECKOUT ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>{r.guestStatus}</span>
+            </div>
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-[10px] text-slate-400 font-bold uppercase">Board: {r.assignedHk || '---'}</p>
+              <button onClick={(e) => handleEditNote(e, r)} className="text-slate-300 hover:text-blue-500 transition-colors">
+                <i className="fa-solid fa-pen-to-square"></i>
+              </button>
+            </div>
+            {r.notes && <div className="mt-2 text-[10px] font-medium text-slate-500 truncate italic">"{r.notes}"</div>}
+            {selectedRooms.has(r.room) && <div className="absolute -top-2 -right-2 bg-blue-600 text-white w-6 h-6 rounded-full flex items-center justify-center border-2 border-white"><i className="fa-solid fa-check text-[10px]"></i></div>}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+// --- HOUSEKEEPING VIEW ---
+const HousekeepingView = ({ rooms, onUpdateRoom, activeHk, setActiveHk, onStartRoom }) => {
+  const [roomStartTimes, setRoomStartTimes] = useState({});
+  const [onBreak, setOnBreak] = useState(false);
+
+  useEffect(() => {
+    const saved = localStorage.getItem('hk_start_times');
+    if (saved) setRoomStartTimes(JSON.parse(saved));
+  }, []);
+
+  if (!activeHk) {
+    const handleLogin = () => {
+      const name = prompt("Enter your name as it appears in Setup sheet column E:");
+      if (!name) return;
+      google.script.run.withSuccessHandler(res => {
+        if(res.ok) setActiveHk({ num: res.board, name: res.name }); else alert(res.error);
+      }).apiHkRegisterName(name);
+    };
+    return (
+      <div className="h-full flex items-center justify-center bg-slate-50 p-6">
+        <div className="bg-white p-10 rounded-[3rem] shadow-2xl text-center w-full max-w-sm border">
+          <div className="h-20 w-20 bg-blue-100 text-blue-600 rounded-3xl flex items-center justify-center mx-auto mb-8 text-3xl shadow-inner"><i className="fa-solid fa-id-card"></i></div>
+          <h2 className="text-3xl font-black mb-2 uppercase tracking-tighter">Staff Login</h2>
+          <p className="text-slate-400 text-[10px] font-bold mb-10 uppercase tracking-widest">Board Sync v5.3</p>
+          <button onClick={handleLogin} className="w-full bg-slate-900 text-white py-5 rounded-2xl font-black uppercase text-xs tracking-widest transition-all active:scale-95">Start Shift</button>
+        </div>
+      </div>
+    );
+  }
+
+  const myRooms = rooms.filter(r => r.assignedHk === activeHk.num);
+
+  const startRoom = (roomNo) => {
+    const nextTimes = { ...roomStartTimes, [roomNo]: Date.now() };
+    setRoomStartTimes(nextTimes);
+    localStorage.setItem('hk_start_times', JSON.stringify(nextTimes));
+    onStartRoom(roomNo, activeHk.name);
+  };
+
+  const finishRoom = (room) => {
+    const startTime = roomStartTimes[room.room];
+    const duration = startTime ? Math.round((Date.now() - startTime) / 60000) : 0;
+    const notes = duration > 0 ? (room.notes ? room.notes + " | " + duration + "m clean" : duration + "m clean") : room.notes;
+    onUpdateRoom(room.room, { ...room, done: true, housekeepingStatus: RoomStatus.CLEAN, notes: notes });
+    const newTimes = { ...roomStartTimes };
+    delete newTimes[room.room];
+    setRoomStartTimes(newTimes);
+    localStorage.setItem('hk_start_times', JSON.stringify(newTimes));
+  };
+
+  return (
+    <div className="h-full flex flex-col p-6 space-y-4 bg-slate-50 overflow-hidden max-w-2xl mx-auto w-full">
+      <div className="flex items-center justify-between bg-white p-5 rounded-[2rem] border shadow-sm">
+        <div className="flex items-center gap-4">
+          <div className="h-12 w-12 bg-slate-900 text-white rounded-2xl flex items-center justify-center font-black text-xl">{activeHk.num}</div>
+          <div>
+            <h2 className="font-black text-base leading-none uppercase">{activeHk.name}</h2>
+            <p className="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-widest">Active Board</p>
+          </div>
+        </div>
+        <button onClick={() => setActiveHk(null)} className="p-3 text-slate-300 hover:text-red-500 transition-colors"><i className="fa-solid fa-right-from-bracket"></i></button>
+      </div>
+      
+      <div className="flex-1 overflow-y-auto space-y-4 custom-scrollbar pb-24">
+        {myRooms.length === 0 ? <div className="text-center py-24 text-slate-300 uppercase font-black text-sm tracking-widest opacity-30"><i className="fa-solid fa-clipboard-check text-5xl mb-4"></i><br/>No Assignments</div> : 
+        myRooms.map(r => {
+          const isInProgress = !!roomStartTimes[r.room];
+          const isFullSvc = r.serviceType && (r.serviceType.toLowerCase().includes("full") || r.serviceType.toLowerCase().includes("stayover"));
+          return (
+            <div key={r.room} className={`p-6 rounded-[2.5rem] border-l-[10px] bg-white transition-all shadow-md ${r.done ? 'opacity-40 grayscale border-slate-300' : isInProgress ? 'border-blue-600 ring-4 ring-blue-50' : isFullSvc ? 'border-purple-600' : 'border-slate-300'}`}>
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                   <h3 className="text-4xl font-black tracking-tighter">#{r.room}</h3>
+                   <div className="text-[10px] font-black uppercase text-slate-400 mt-1">{r.roomType} {isFullSvc ? '• FULL SERVICE' : ''}</div>
+                </div>
+                <div className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase ${r.guestStatus === GuestStatus.CHECKOUT ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700'}`}>{r.guestStatus}</div>
+              </div>
+              {r.notes && <div className="bg-amber-50 text-amber-900 text-[11px] font-bold p-3 rounded-2xl mb-4 border border-amber-100">Alert: {r.notes}</div>}
+              {!r.done ? (
+                <div className="flex gap-3">
+                   {!isInProgress ? (
+                     <button onClick={() => startRoom(r.room)} className="flex-1 bg-slate-900 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest active:scale-95 transition-all">Start Clean</button>
+                   ) : (
+                     <button onClick={() => finishRoom(r)} className="flex-1 bg-green-600 text-white py-4 rounded-2xl font-black uppercase text-xs tracking-widest animate-pulse shadow-lg shadow-green-100">Finish</button>
+                   )}
+                </div>
+              ) : (
+                <div className="text-center py-3 text-green-600 font-black uppercase text-[10px] bg-green-50 rounded-2xl border border-green-100">Synced Clean</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
+// --- MAIN APP COMPONENT ---
+const App = () => {
+  const [view, setView] = useState('FRONT_DESK');
+  const [rooms, setRooms] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [activeHk, setActiveHk] = useState(null);
+
+  const fetchRooms = useCallback(() => {
+    setLoading(true);
+    google.script.run.withSuccessHandler(data => { 
+      setRooms(data || []); 
+      setLoading(false); 
+    }).apiGetAllRooms();
+  }, []);
+
+  useEffect(() => { fetchRooms(); }, []);
+
+  const handleUpdate = (roomNo, updatedRoom) => {
+    // Optimistic Update
+    setRooms(prev => prev.map(r => r.room === roomNo ? updatedRoom : r));
+    google.script.run.withSuccessHandler(() => {
+      console.log("Update Success");
+    }).apiUpdateRoom(activeHk ? activeHk.num : "FD", roomNo, updatedRoom.notes, updatedRoom.done);
+  };
+
+  const handleBulk = (nos, hk) => {
+    setLoading(true);
+    google.script.run.withSuccessHandler(() => fetchRooms()).apiAssignRoomsBulk(nos, hk);
+  };
+
+  return (
+    <div className="h-full flex flex-col font-sans select-none">
+      <Navbar view={view} setView={setView} onRefresh={fetchRooms} loading={loading} />
+      <div className="flex-1 relative overflow-hidden bg-slate-50">
+        {view === 'FRONT_DESK' ? 
+          <FrontDeskView rooms={rooms} onBulkAssign={handleBulk} onUpdateRoom={handleUpdate} /> : 
+          <HousekeepingView rooms={rooms} activeHk={activeHk} setActiveHk={setActiveHk} onUpdateRoom={handleUpdate} onStartRoom={(r, n) => google.script.run.apiStartRoom(r, n)} />
+        }
+        {loading && (
+          <div className="absolute inset-0 bg-white/60 backdrop-blur-sm flex items-center justify-center z-[100]">
+            <div className="flex flex-col items-center">
+              <div className="w-12 h-12 border-4 border-slate-900 border-t-blue-600 rounded-full animate-spin"></div>
+              <p className="mt-4 text-[10px] font-black uppercase text-slate-900 tracking-widest">Master Sync...</p>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(<App />);
+</script>
