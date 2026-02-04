@@ -3,23 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Tombstone Grand Master</title>
-    <!-- Tailwind CSS -->
+    <title>Tombstone Grand Hotel - HK Master</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- FontAwesome -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <!-- React & Babel UMD Scripts (Required for GAS) -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
     <style>
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
         @keyframes pulse-subtle { 0%, 100% { opacity: 1; } 50% { opacity: 0.7; } }
-        .syncing-pulse { animation: pulse-subtle 2s infinite ease-in-out; }
+        .sync-active { animation: pulse-subtle 2s infinite ease-in-out; }
     </style>
 <script type="importmap">
 {
@@ -33,8 +26,6 @@
 </head>
 <body class="bg-slate-50 text-slate-900 h-screen overflow-hidden font-sans">
     <div id="root" class="h-full"></div>
-    
-    <!-- This includes all the React logic from App_JS.html -->
-    <?!= include('App_JS'); ?>
+    <script type="module" src="index.tsx"></script>
 </body>
 </html>

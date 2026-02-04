@@ -1,144 +1,128 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { ViewType, Room, HKStaff, RoomStatus } from './types';
-import FrontDeskView from './components/FrontDeskView';
-import HousekeepingView from './components/HousekeepingView';
-import Navbar from './components/Navbar';
+import React, { useState, useEffect, useCallback } from 'react';
+import { ViewType, Room, HKStaff, RoomStatus, GuestStatus } from './types';
+import Navbar from './Navbar';
+import FrontDeskView from './FrontDeskView';
+import HousekeepingView from './HousekeepingView';
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewType>('FRONT_DESK');
   const [rooms, setRooms] = useState<Room[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [activeHk, setActiveHk] = useState<HKStaff | null>(null);
-  
-  const loadingTimeoutRef = useRef<number | null>(null);
 
-  const fetchRooms = useCallback(() => {
+  // Initialize data (Mock data if not in GAS)
+  const initData = useCallback(() => {
     setLoading(true);
-    setError(null);
     
-    // Clear any existing timeout
-    if (loadingTimeoutRef.current) window.clearTimeout(loadingTimeoutRef.current);
-    
-    // Safety timeout: if loading takes > 15s, something might be wrong with GAS
-    loadingTimeoutRef.current = window.setTimeout(() => {
-      if (loading) {
-        setError("Sync is taking longer than usual. Please refresh the page.");
-        setLoading(false);
-      }
-    }, 15000);
-
+    // Check if running in Google Apps Script
     // @ts-ignore
     if (typeof google !== 'undefined' && google.script) {
       // @ts-ignore
       google.script.run
         .withSuccessHandler((data: Room[]) => {
-          if (loadingTimeoutRef.current) window.clearTimeout(loadingTimeoutRef.current);
           setRooms(data || []);
-          setLoading(false);
-        })
-        .withFailureHandler((err: any) => {
-          if (loadingTimeoutRef.current) window.clearTimeout(loadingTimeoutRef.current);
-          console.error("Fetch Error:", err);
-          setError("Failed to fetch rooms from Master Spreadsheet.");
           setLoading(false);
         })
         .apiGetAllRooms();
     } else {
-      // Mock data for local development
-      setTimeout(() => {
-        if (loadingTimeoutRef.current) window.clearTimeout(loadingTimeoutRef.current);
-        setRooms(Array.from({ length: 40 }, (_, i) => ({
+      // Running on GitHub/Local - Use LocalStorage persistence
+      const saved = localStorage.getItem('tg_master_rooms');
+      if (saved) {
+        setRooms(JSON.parse(saved));
+        setLoading(false);
+      } else {
+        // Generate initial mock data
+        const mockRooms: Room[] = Array.from({ length: 40 }, (_, i) => ({
           room: (101 + i).toString(),
           roomType: i % 2 === 0 ? 'King' : 'Double Queen',
-          housekeepingStatus: i % 5 === 0 ? RoomStatus.CLEAN : RoomStatus.DIRTY,
-          guestStatus: i % 3 === 0 ? 'Arrivals' : 'Checked Out' as any,
-          occupancyStatus: 'Vacant',
+          housekeepingStatus: RoomStatus.DIRTY,
+          guestStatus: i % 4 === 0 ? GuestStatus.CHECKOUT : i % 3 === 0 ? GuestStatus.ARRIVAL : GuestStatus.STAYOVER,
+          occupancyStatus: 'Occupied',
           arrivalsRoom: '',
           checkIn: '',
           checkOut: '',
-          assignedHk: (i % 5 + 1).toString(),
+          assignedHk: '',
           minutes: 30,
-          notes: i % 10 === 0 ? 'Guest reported broken light' : '',
-          done: i % 5 === 0,
-          serviceType: i % 8 === 0 ? 'Full Stayover Svc' : 'Departure Clean'
-        })));
+          notes: i % 10 === 0 ? 'Guest requested extra towels' : '',
+          done: false,
+          serviceType: i % 3 === 0 ? 'Departure Clean' : 'Full Stayover Svc'
+        }));
+        setRooms(mockRooms);
+        localStorage.setItem('tg_master_rooms', JSON.stringify(mockRooms));
         setLoading(false);
-      }, 1000);
+      }
     }
-  }, [loading]);
-
-  useEffect(() => {
-    fetchRooms();
-    return () => {
-      if (loadingTimeoutRef.current) window.clearTimeout(loadingTimeoutRef.current);
-    };
   }, []);
 
-  const handleUpdateRoom = (updatedRoom: Room) => {
-    // Optimistic UI Update: change state locally first
-    setRooms(prev => prev.map(r => r.room === updatedRoom.room ? updatedRoom : r));
-    
+  useEffect(() => {
+    initData();
+  }, [initData]);
+
+  // Save changes to the "Backend"
+  const syncUpdate = (updatedRooms: Room[]) => {
+    setRooms(updatedRooms);
     // @ts-ignore
-    if (typeof google !== 'undefined' && google.script) {
-      // @ts-ignore
-      google.script.run
-        .withSuccessHandler(() => console.log(`Room ${updatedRoom.room} synced.`))
-        .withFailureHandler((err: any) => {
-          console.error("Sync Error:", err);
-          alert("Could not sync room update. Please refresh.");
-        })
-        .apiUpdateRoom(
-          updatedRoom.assignedHk || "FD", 
-          updatedRoom.room, 
-          updatedRoom.notes, 
-          updatedRoom.done
-        );
+    if (typeof google === 'undefined') {
+      localStorage.setItem('tg_master_rooms', JSON.stringify(updatedRooms));
     }
   };
 
-  const handleBulkAssign = (roomNumbers: string[], hkNum: string) => {
-    setLoading(true);
+  const handleUpdateRoom = (roomNo: string, updates: Partial<Room>) => {
+    const newRooms = rooms.map(r => r.room === roomNo ? { ...r, ...updates } : r);
+    syncUpdate(newRooms);
+
+    // If in GAS, hit the server
+    // @ts-ignore
+    if (typeof google !== 'undefined' && google.script) {
+      const room = newRooms.find(r => r.room === roomNo);
+      if (room) {
+        // @ts-ignore
+        google.script.run.apiUpdateRoom(
+          activeHk?.num || "FD",
+          room.room,
+          room.notes,
+          room.done
+        );
+      }
+    }
+  };
+
+  const handleBulkAssign = (roomNos: string[], hkNum: string) => {
+    const newRooms = rooms.map(r => roomNos.includes(r.room) ? { ...r, assignedHk: hkNum } : r);
+    syncUpdate(newRooms);
+
     // @ts-ignore
     if (typeof google !== 'undefined' && google.script) {
       // @ts-ignore
-      google.script.run
-        .withSuccessHandler(() => fetchRooms())
-        .withFailureHandler(() => {
-          setLoading(false);
-          alert("Bulk assignment failed. Check your connection.");
-        })
-        .apiAssignRoomsBulk(roomNumbers, hkNum);
-    } else {
-      setRooms(prev => prev.map(r => roomNumbers.includes(r.room) ? { ...r, assignedHk: hkNum } : r));
-      setLoading(false);
+      google.script.run.withSuccessHandler(() => initData()).apiAssignRoomsBulk(roomNos, hkNum);
     }
   };
 
   return (
-    <div className="flex flex-col h-full bg-slate-50">
-      <Navbar view={view} setView={setView} onRefresh={fetchRooms} loading={loading} />
+    <div className="h-full flex flex-col font-sans select-none">
+      <Navbar view={view} setView={setView} onRefresh={initData} loading={loading} />
       
-      <main className="flex-1 overflow-hidden relative">
-        {error && (
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[110] bg-red-600 text-white px-6 py-3 rounded-full shadow-2xl font-black text-[10px] uppercase tracking-widest flex items-center gap-3">
-            <i className="fa-solid fa-circle-exclamation"></i>
-            {error}
-            <button onClick={fetchRooms} className="ml-4 bg-white/20 px-3 py-1 rounded-lg">Retry</button>
-          </div>
-        )}
-
+      <main className="flex-1 relative overflow-hidden bg-slate-50">
         {view === 'FRONT_DESK' ? (
-          <FrontDeskView rooms={rooms} onBulkAssign={handleBulkAssign} onUpdateRoom={handleUpdateRoom} />
+          <FrontDeskView 
+            rooms={rooms} 
+            onBulkAssign={handleBulkAssign} 
+            onUpdateRoom={handleUpdateRoom} 
+          />
         ) : (
-          <HousekeepingView rooms={rooms} onUpdateRoom={handleUpdateRoom} activeHk={activeHk} setActiveHk={setActiveHk} />
+          <HousekeepingView 
+            rooms={rooms} 
+            activeHk={activeHk} 
+            setActiveHk={setActiveHk} 
+            onUpdateRoom={handleUpdateRoom} 
+          />
         )}
 
         {loading && (
           <div className="absolute inset-0 bg-white/60 backdrop-blur-sm flex items-center justify-center z-[100]">
             <div className="flex flex-col items-center">
-              <div className="w-12 h-12 border-4 border-slate-900 border-t-blue-600 rounded-full animate-spin mb-4"></div>
-              <span className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-900">Synchronizing...</span>
+              <div className="w-12 h-12 border-4 border-slate-900 border-t-blue-600 rounded-full animate-spin"></div>
+              <p className="mt-4 text-[10px] font-black uppercase text-slate-900 tracking-[0.3em]">Synchronizing</p>
             </div>
           </div>
         )}

@@ -1,4 +1,3 @@
-
 export enum RoomStatus {
   DIRTY = 'Dirty',
   CLEAN = 'Clean',
