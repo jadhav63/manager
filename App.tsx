@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { ViewType, Room, HKStaff, RoomStatus, GuestStatus } from './types';
-import Navbar from './Navbar';
-import FrontDeskView from './FrontDeskView';
-import HousekeepingView from './HousekeepingView';
+import { ViewType, Room, HKStaff, RoomStatus, GuestStatus } from './types.ts';
+import Navbar from './Navbar.tsx';
+import FrontDeskView from './FrontDeskView.tsx';
+import HousekeepingView from './HousekeepingView.tsx';
 
 const App: React.FC = () => {
   const [view, setView] = useState<ViewType>('FRONT_DESK');
@@ -10,11 +10,9 @@ const App: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [activeHk, setActiveHk] = useState<HKStaff | null>(null);
 
-  // Initialize data (Mock data if not in GAS)
   const initData = useCallback(() => {
     setLoading(true);
     
-    // Check if running in Google Apps Script
     // @ts-ignore
     if (typeof google !== 'undefined' && google.script) {
       // @ts-ignore
@@ -25,13 +23,11 @@ const App: React.FC = () => {
         })
         .apiGetAllRooms();
     } else {
-      // Running on GitHub/Local - Use LocalStorage persistence
       const saved = localStorage.getItem('tg_master_rooms');
       if (saved) {
         setRooms(JSON.parse(saved));
         setLoading(false);
       } else {
-        // Generate initial mock data
         const mockRooms: Room[] = Array.from({ length: 40 }, (_, i) => ({
           room: (101 + i).toString(),
           roomType: i % 2 === 0 ? 'King' : 'Double Queen',
@@ -58,7 +54,6 @@ const App: React.FC = () => {
     initData();
   }, [initData]);
 
-  // Save changes to the "Backend"
   const syncUpdate = (updatedRooms: Room[]) => {
     setRooms(updatedRooms);
     // @ts-ignore
@@ -71,7 +66,6 @@ const App: React.FC = () => {
     const newRooms = rooms.map(r => r.room === roomNo ? { ...r, ...updates } : r);
     syncUpdate(newRooms);
 
-    // If in GAS, hit the server
     // @ts-ignore
     if (typeof google !== 'undefined' && google.script) {
       const room = newRooms.find(r => r.room === roomNo);
@@ -107,7 +101,7 @@ const App: React.FC = () => {
           <FrontDeskView 
             rooms={rooms} 
             onBulkAssign={handleBulkAssign} 
-            onUpdateRoom={handleUpdateRoom} 
+            onUpdateRoom={(roomNo, updates) => handleUpdateRoom(roomNo, updates)} 
           />
         ) : (
           <HousekeepingView 

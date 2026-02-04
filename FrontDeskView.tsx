@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Room, RoomStatus, GuestStatus } from './types';
+import { Room, RoomStatus, GuestStatus } from './types.ts';
 
 interface FrontDeskViewProps {
   rooms: Room[];
